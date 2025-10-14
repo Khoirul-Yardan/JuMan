@@ -49,7 +49,7 @@ Dokumen ini menjelaskan konsep OOP yang digunakan di proyek ini dan bagaimana me
 6. Error Handling dan Robustness (prinsip desain OOP)
 	- Penting: kelas berinteraksi lewat kontrak method (return types dan exceptions). Kesalahan deskripsi kunci / file yang korup dilempar sebagai `Exception` untuk diproses di lapisan UI.
 
-## Catatan penting & perbaikan yang disarankan
+## Catatan penting & perbaikan 
 - Saat ini algoritma: AES CBC + PKCS7. CBC memerlukan IV yang unik per-enkripsi (sudah ditangani). Pastikan root/key handling aman dan salt/iteration PBKDF2 memadai (saat ini 10.000 iterasi — pertimbangkan menaikkan sesuai kebutuhan). 
 - Untuk keamanan yang lebih baik pertimbangkan AES-GCM (authenticated encryption) untuk mendeteksi manipulasi ciphertext tanpa ambigu PKCS7 padding.
 - Perbaiki validasi dan penanganan error agar tidak menampilkan detail teknis ke UI (tampilkan pesan user-friendly).
@@ -65,9 +65,8 @@ flutter run -d windows
 flutter build windows
 ```
 
-## Lanjutan yang bisa saya bantu
+## Lanjutan 
 - Implementasi delete-temp-file-on-external-app-exit (desktop) agar file sementara dihapus segera setelah program eksternal ditutup.
 - Migrasi ke AES-GCM untuk integritas + kerahasiaan.
 - Perbaikan `flutter analyze` warnings/errors (saya bisa mulai memperbaiki `document.dart` dan `key_manager.dart`).
 
-Jika Anda ingin saya tambahkan salah satu perbaikan tersebut sekarang, beri tahu mana yang prioritas (mis. perbaiki `flutter analyze` errors, atau implementasi penghapusan temp file saat app keluar).
