@@ -33,6 +33,8 @@ class _AddFilesScreenState extends State<AddFilesScreen> {
   
   /// Whether the screen is currently processing files
   bool _working = false;
+  /// Simple progress log lines for presentation
+  final List<String> _progressLines = [];
   
   /// List of files picked by the user
   List<PlatformFile>? _pickedFiles;
@@ -44,7 +46,6 @@ class _AddFilesScreenState extends State<AddFilesScreen> {
   final KeyManager _keyManager = KeyManager();
   
   /// Whether the widget is still mounted and can update state
-  bool get _canUpdateState => mounted;
 
   /// Shows a snackbar message if the widget is mounted
   void _showMessage(String message, {bool error = false}) {
@@ -63,11 +64,12 @@ class _AddFilesScreenState extends State<AddFilesScreen> {
     setState(() => _working = value);
   }
 
-  /// Clears the picked files list if the widget is mounted
-  void _clearPickedFiles() {
+  void _addProgress(String line) {
     if (!mounted) return;
-    setState(() => _pickedFiles = null);
+    setState(() => _progressLines.add(line));
   }
+
+  /// Clears the picked files list if the widget is mounted
 
   @override
   void initState() {
@@ -115,26 +117,33 @@ class _AddFilesScreenState extends State<AddFilesScreen> {
         if (pickedFile.path == null) continue;
 
         try {
+            _addProgress('Starting encryption: ${pickedFile.name}');
           final file = File(pickedFile.path!);
           if (!await file.exists()) {
-            _showMessage('File not found: ${pickedFile.name}', error: true);
+              _showMessage('File not found: ${pickedFile.name}', error: true);
+              _addProgress('File not found: ${pickedFile.name}');
             continue;
           }
 
-          final bytes = await file.readAsBytes();
+            _addProgress('Reading file bytes');
+            final bytes = await file.readAsBytes();
+            _addProgress('Generating per-file key');
           
           // Generate per-file key and encrypt
           final fileKey = EncryptionService.randomBytes(32);
+            _addProgress('Encrypting payload');
           final encRes = EncryptionService.encryptBytes(
             Uint8List.fromList(bytes), 
             fileKey
           );
+            _addProgress('Wrapping file key with root key');
           
           // Wrap file key with root key
           final wrapped = EncryptionService.encryptBytes(fileKey, rootKey);
-          if (!wrapped.containsKey('cipher') || !encRes.containsKey('iv')) {
-            throw EncryptionException('Encryption failed - invalid response');
-          }
+            if (!wrapped.containsKey('cipher') || !encRes.containsKey('iv')) {
+              _addProgress('Encryption failed - invalid response');
+              throw EncryptionException('Encryption failed - invalid response');
+            }
 
           // Combine cipher and IV for storage
           final encryptedData = Uint8List.fromList([
@@ -164,11 +173,13 @@ class _AddFilesScreenState extends State<AddFilesScreen> {
           }
 
           processedFiles++;
+          _addProgress('Saved encrypted file to vault');
           _showMessage(
             'Encrypted ${processedFiles} of ${totalFiles} files',
             error: false
           );
         } catch (e) {
+          _addProgress('Error processing ${pickedFile.name}: ${e.toString()}');
           _showMessage(
             'Error processing ${pickedFile.name}: ${e.toString()}',
             error: true
@@ -278,6 +289,21 @@ class _AddFilesScreenState extends State<AddFilesScreen> {
                       ),
               ),
             ],
+              SizedBox(height: 12),
+              if (_working) ...[
+                Text('Progress', style: Theme.of(context).textTheme.titleMedium),
+                SizedBox(height: 8),
+                Expanded(
+                  child: Container(
+                    padding: EdgeInsets.all(8),
+                    color: Colors.black12,
+                    child: ListView.builder(
+                      itemCount: _progressLines.length,
+                      itemBuilder: (context, i) => Text(_progressLines[i]),
+                    ),
+                  ),
+                ),
+              ],
           ],
         ),
       ),

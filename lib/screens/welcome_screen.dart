@@ -32,7 +32,7 @@ class WelcomeScreen extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   backgroundColor: Theme.of(context).primaryColor,
                 ),
-                onPressed: () => Navigator.pushReplacement(
+                onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => LoginScreen()),
                 ),
@@ -54,6 +54,22 @@ class WelcomeScreen extends StatelessWidget {
                   'Create New Account',
                   style: TextStyle(fontSize: 16),
                 ),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {
+                  showDialog<void>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: Text('How LockVerse works'),
+                      content: SingleChildScrollView(
+                        child: Text('LockVerse encrypts each file with a random per-file key. That key is encrypted with your root key, which is itself protected by your master password. Files are stored encrypted in the app vault. When opening, the app unwraps the file key and decrypts to a temporary file which is opened by your OS default app.'),
+                      ),
+                      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text('Close'))],
+                    ),
+                  );
+                },
+                child: Text('How it works'),
               ),
             ],
           ),

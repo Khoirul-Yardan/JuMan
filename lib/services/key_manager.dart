@@ -99,8 +99,10 @@ class KeyManager {
   Future<Uint8List?> unwrapRootWithMaster(Uint8List masterKeyBytes) async {
     final jsonStr = await _storage.read(key: _rootWrappedKeyKey);
     if (jsonStr == null) return null;
-    final Map m = json.decode(jsonStr);
-    return EncryptionService.decryptBytes(m['cipher'], m['iv'], masterKeyBytes);
+    final Map<String, dynamic> m = json.decode(jsonStr) as Map<String, dynamic>;
+    final cipher = m['cipher'] as String;
+    final iv = m['iv'] as String;
+    return EncryptionService.decryptBytes(cipher, iv, masterKeyBytes);
   }
 
   // recover root with recoveryCode (one-time use expected by caller)
@@ -109,17 +111,18 @@ class KeyManager {
     final salt = await _storage.read(key: 'recovery_salt');
     
     if (jsonStr == null || salt == null) return null;
-    
-    final Map m = json.decode(jsonStr);
+    final Map<String, dynamic> m = json.decode(jsonStr) as Map<String, dynamic>;
     final recoveryKey = EncryptionService.pbkdf2(
       recoveryCode, 
       base64.decode(salt),
       10000,
-      32
+      32,
     );
-    
+
     try {
-      return EncryptionService.decryptBytes(m['cipher'], m['iv'], recoveryKey);
+      final cipher = m['cipher'] as String;
+      final iv = m['iv'] as String;
+      return EncryptionService.decryptBytes(cipher, iv, recoveryKey);
     } catch (e) {
       print('Recovery failed: $e');
       return null;

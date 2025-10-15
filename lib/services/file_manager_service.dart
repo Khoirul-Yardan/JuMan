@@ -56,6 +56,34 @@ class FileManagerService {
     return file.path;
   }
 
+  /// Move an encrypted file to the app's trash directory. Returns the trash path.
+  Future<String> moveToTrash(String encryptedPath) async {
+    final path = await _localPath;
+    final trashDir = Directory('$path/trash');
+    await trashDir.create(recursive: true);
+
+    final f = File(encryptedPath);
+    if (!await f.exists()) throw Exception('File not found');
+
+    final newPath = '${trashDir.path}/${DateTime.now().millisecondsSinceEpoch}-${f.uri.pathSegments.last}';
+    await f.rename(newPath);
+    return newPath;
+  }
+
+  /// Restore a file from trash back to vault. Returns restored path.
+  Future<String> restoreFromTrash(String trashPath) async {
+    final path = await _localPath;
+    final vaultDir = Directory('$path/vault');
+    await vaultDir.create(recursive: true);
+
+    final f = File(trashPath);
+    if (!await f.exists()) throw Exception('Trash file not found');
+
+    final newPath = '${vaultDir.path}/${DateTime.now().millisecondsSinceEpoch}-${f.uri.pathSegments.last}';
+    await f.rename(newPath);
+    return newPath;
+  }
+
   Future<void> openFile(Document doc) async {
     try {
       final file = File(doc.path);

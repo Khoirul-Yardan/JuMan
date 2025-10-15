@@ -64,8 +64,39 @@ class _HomeScreenState extends State<HomeScreen> {
                     IconButton(
                       onPressed: () async {
                         await fm.openFile(docs[i]);
-                      }, 
-                      icon: Icon(Icons.open_in_new)
+                      },
+                      icon: Icon(Icons.open_in_new),
+                    ),
+                    IconButton(
+                      onPressed: () async {
+                        // Show encryption log and metadata dialog
+                        final docService = Provider.of<DocumentService>(context, listen: false);
+                        final activities = await docService.getDocumentActivity(docs[i].id);
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            title: Text('Document Info'),
+                            content: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Name: ${docs[i].name}'),
+                                  Text('Path: ${docs[i].path}'),
+                                  Text('Version: ${docs[i].version}'),
+                                  SizedBox(height: 12),
+                                  Text('Activity Log:', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  ...activities.map((a) => Text('- ${a['action']} @ ${a['timestamp']}')),
+                                ],
+                              ),
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(context), child: Text('Close')),
+                            ],
+                          ),
+                        );
+                      },
+                      icon: Icon(Icons.list),
+                      tooltip: 'Log',
                     ),
                     PopupMenuButton(
                       icon: Icon(Icons.more_vert),
@@ -80,7 +111,25 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                       onSelected: (value) async {
                         if (value == 'delete') {
-                          await Provider.of<DocumentService>(context, listen: false).deleteDocument(docs[i].id);
+                          final docService = Provider.of<DocumentService>(context, listen: false);
+                          try {
+                            final tombstone = await docService.deleteDocumentWithTrash(docs[i].id, fm);
+                            if (tombstone != null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Document deleted'),
+                                  action: SnackBarAction(
+                                    label: 'Undo',
+                                    onPressed: () async {
+                                      await docService.restoreDocument(tombstone, fm);
+                                    },
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+                          }
                         }
                       },
                     ),

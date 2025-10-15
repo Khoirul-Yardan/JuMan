@@ -31,12 +31,12 @@ class Document {
   };
 
   static Document fromMap(Map<String, dynamic> map) => Document(
-    id: map['id'],
-    name: map['name'],
-    path: map['path'],
-    wrappedKey: map['wrapped_key'],
-    iv: map['iv'],
-    version: map['version'],
-    createdAt: DateTime.parse(map['created_at']),
+    id: map['id'] is int ? map['id'] as int : (map['id'] as num).toInt(),
+    name: map['name'] as String,
+    path: map['path'] as String,
+    wrappedKey: map['wrapped_key'] as String,
+    iv: map['iv'] as String,
+    version: map['version'] is int ? map['version'] as int : (map['version'] as num).toInt(),
+    createdAt: DateTime.parse(map['created_at'] as String),
   );
 }

@@ -63,6 +63,24 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () {
+                  showDialog<void>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: Text('How LockVerse works'),
+                      content: SingleChildScrollView(
+                        child: Text('LockVerse encrypts each file with a random per-file key. That key is encrypted with your root key, which is itself protected by your master password. Files are stored encrypted in the app vault. When opening, the app unwraps the file key and decrypts to a temporary file which is opened by your OS default app.'),
+                      ),
+                      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text('Close'))],
+                    ),
+                  );
+                },
+                child: Text('How it works'),
+              ),
+            ),
             TextField(
               controller: _userCtrl,
               decoration: const InputDecoration(
@@ -96,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Text('Forgot Password?'),
               onPressed: () {
                 // Show recovery dialog
-                showDialog(
+                  showDialog<void>(
                   context: context,
                   builder: (_) => AlertDialog(
                     title: Text('Recover Account'),
