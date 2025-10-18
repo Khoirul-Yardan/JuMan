@@ -102,6 +102,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icon(Icons.more_vert),
                       itemBuilder: (context) => [
                         PopupMenuItem(
+                          value: 'export',
+                          child: ListTile(
+                            leading: Icon(Icons.file_upload),
+                            title: Text('Export decrypted copy'),
+                          ),
+                        ),
+                        PopupMenuItem(
                           value: 'delete',
                           child: ListTile(
                             leading: Icon(Icons.delete),
@@ -129,6 +136,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             }
                           } catch (e) {
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+                          }
+                        } else if (value == 'export') {
+                          try {
+                            final decrypted = await fm.decryptFileToBytes(docs[i]);
+                            final exportedPath = await fm.exportDecryptedToDownloads(docs[i], decrypted);
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Exported to $exportedPath')));
+                          } catch (e) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Export failed: $e')));
                           }
                         }
                       },

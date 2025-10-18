@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:path/path.dart';
+// path import removed (not needed at startup)
 import 'utils/theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -18,10 +18,7 @@ void main() async {
   databaseFactory = databaseFactoryFfi;
 
   // Delete existing database to force recreation with new schema
-  final dbFactory = databaseFactoryFfi;
-  final dbPath = await databaseFactoryFfi.getDatabasesPath();
-  final path = join(dbPath, 'lockverse_v2_full.db');
-  await dbFactory.deleteDatabase(path);
+  // NOTE: Do not delete database on startup — preserve user data across runs.
 
   // Initialize services
   final authService = AuthService();

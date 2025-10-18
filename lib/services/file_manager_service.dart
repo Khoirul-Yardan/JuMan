@@ -140,10 +140,29 @@ class FileManagerService {
       if (result.type != ResultType.done) {
         throw Exception(result.message);
       }
+      return;
     }} catch (e) {
       String message = 'Error opening file: $e';
       if (e.toString().contains('path')) {
         message = 'File not found or cannot be accessed';
+        // Offer user to restore/export decrypted copy if possible
+  // final docService = Provider.of<DocumentService>(context, listen: false);
+        // Show a dialog prompting user to restore the file back to Downloads as plaintext
+        showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text('File missing'),
+            content: Text('Encrypted file is missing from vault. You can try to export a decrypted copy if you have a backup of the encrypted blob. Do you want to attempt export?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel')),
+              ElevatedButton(onPressed: () async {
+                Navigator.pop(context);
+                // Attempt to export: if file not found in vault, nothing to do — just notify
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No encrypted blob available to export')));
+              }, child: Text('OK')),
+            ],
+          ),
+        );
       } else if (e.toString().contains('key')) {
         message = 'Cannot decrypt file - encryption key not available';
       } else if (e.toString().contains('decrypt')) {
@@ -154,11 +173,46 @@ class FileManagerService {
     }
   }
 
+  /// Export decrypted file back to a user-accessible location (Downloads)
+  Future<String> exportDecryptedToDownloads(Document doc, Uint8List decryptedBytes) async {
+    final downloads = await getDownloadsDirectory();
+    final file = File('${downloads!.path}/${doc.name}');
+    await file.writeAsBytes(decryptedBytes);
+    return file.path;
+  }
+
+  /// Decrypt an encrypted vault file and return plaintext bytes
+  Future<Uint8List> decryptFileToBytes(Document doc) async {
+    final file = File(doc.path);
+    if (!await file.exists()) throw Exception('File not found');
+
+    final km = KeyManager();
+    final masterKey = await km.getMasterKey();
+    if (masterKey == null) throw Exception('Master key not available');
+    final rootKey = await km.unwrapRootWithMaster(masterKey);
+    if (rootKey == null) throw Exception('Root key not available');
+
+    final wrappedCipher = doc.wrappedKey;
+    final wrappedIv = doc.iv;
+    final fileKey = EncryptionService.decryptBytes(wrappedCipher, wrappedIv, rootKey);
+
+    final bytes = await file.readAsBytes();
+    if (bytes.length < 16) throw Exception('Encrypted file is too small or corrupted');
+    final cipher = bytes.sublist(0, bytes.length - 16);
+    final iv = bytes.sublist(bytes.length - 16);
+    final decrypted = EncryptionService.decryptBytes(
+      base64.encode(cipher),
+      base64.encode(iv),
+      fileKey,
+    );
+    return decrypted;
+  }
+
   Future<void> createDocumentMeta(String name, String path, String wrappedKey, String iv) async {
     final doc = Document(
-      id: 0, // Will be set by SQLite
+      id: 0,
       name: name,
-      path: path, 
+      path: path,
       wrappedKey: wrappedKey,
       iv: iv,
       version: 1,
