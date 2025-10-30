@@ -56,27 +56,15 @@ class FileManagerService {
     
     await file.writeAsBytes(secureBytes);
     
-    // On Windows, set hidden and system attributes - PERBAIKAN
+    // On Windows, set hidden and system attributes
     if (Platform.isWindows) {
       try {
-        // Coba metode attrib pertama
         final processResult = await Process.run('attrib', ['+H', '+S', file.path]);
         if (processResult.exitCode != 0) {
           print('Warning: Could not set file attributes with attrib: ${processResult.stderr}');
-          
-          // Fallback: coba dengan PowerShell
-          final psResult = await Process.run('powershell', [
-            '-Command',
-            'Set-ItemProperty -Path "${file.path}" -Name Attributes -Value "ReadOnly, Hidden, System"'
-          ]);
-          
-          if (psResult.exitCode != 0) {
-            print('Warning: Could not set file attributes with PowerShell: ${psResult.stderr}');
-          }
         }
       } catch (e) {
         print('Warning: Failed to set file attributes: $e');
-        // Continue without attributes - better than failing completely
       }
     }
     
@@ -111,181 +99,263 @@ class FileManagerService {
     return newPath;
   }
 
-  /// Export file tanpa enkripsi ke lokasi yang dipilih user - PERBAIKAN
- Future<String?> exportDecrypted(Document doc) async {
-  try {
-    final file = File(doc.path);
-    if (!await file.exists()) throw Exception('File not found');
-
-   final km = KeyManager(); // Use fixed key manager
-    final masterKey = await km.getMasterKey();
-    if (masterKey == null) throw Exception('Master key not available');
-    
-    print('Master key obtained, length: ${masterKey.length}');
-    
-    final rootKey = await km.unwrapRootWithMaster(masterKey);
-    if (rootKey == null) throw Exception('Root key not available');
-
-    print('Root key obtained, length: ${rootKey.length}');
-
-    // Decrypt the wrapped file key
-    final wrappedCipher = doc.wrappedKey;
-    final wrappedIv = doc.iv;
-    
-    print('Wrapped cipher length: ${wrappedCipher.length}');
-    print('Wrapped IV length: ${wrappedIv.length}');
-    
-    final fileKey = EncryptionService.decryptBytes(wrappedCipher, wrappedIv, rootKey);
-    print('File key decrypted, length: ${fileKey.length}');
-
-    // Read and validate encrypted file
-    final bytes = await file.readAsBytes();
-    print('Encrypted file size: ${bytes.length} bytes');
-    
-    final unpacked = SecureFileFormat.unpackFile(bytes);
-    final encryptedData = unpacked['data'] as List<int>;
-    final originalName = unpacked['header']['originalName'] as String;
-    
-    print('Encrypted data size: ${encryptedData.length} bytes');
-    
-    // Decrypt data
-    if (encryptedData.length < 16) throw Exception('Encrypted data is too small or corrupted');
-    final cipher = encryptedData.sublist(0, encryptedData.length - 16);
-    final iv = encryptedData.sublist(encryptedData.length - 16);
-    
-    print('Cipher size: ${cipher.length}, IV size: ${iv.length}');
-    
-    final decrypted = EncryptionService.decryptBytes(
-      base64.encode(cipher),
-      base64.encode(iv),
-      fileKey,
-    );
-
-    print('File decrypted successfully, size: ${decrypted.length} bytes');
-
-    // Ask user for export location
-    final savePath = await FilePicker.platform.saveFile(
-      dialogTitle: 'Pilih lokasi ekspor file',
-      fileName: originalName,
-    );
-
-    if (savePath != null) {
-      await File(savePath).writeAsBytes(decrypted);
-      print('File exported to: $savePath');
-      return savePath;
-    }
-    
-    return null;
-
-  } catch (e) {
-    print('Export error details: $e');
-    rethrow;
-  }
-}
-  Future<void> openFile(Document doc) async {
+  /// PERBAIKAN: Export file dengan handling error yang lebih baik
+  Future<String?> exportDecrypted(Document doc) async {
     try {
       final file = File(doc.path);
       if (!await file.exists()) throw Exception('File not found');
 
-      final docService = Provider.of<DocumentService>(context, listen: false);
-      final existingDoc = await docService.getDocument(doc.id);
+      final km = KeyManager();
+      final masterKey = await km.getMasterKey();
+      if (masterKey == null) throw Exception('Master key not available');
       
-      if (existingDoc != null) {
-        // File already in vault, just decrypt and open
-        final km = KeyManager();
-        final masterKey = await km.getMasterKey();
-        if (masterKey == null) throw Exception('Master key not available');
-        
-        final rootKey = await km.unwrapRootWithMaster(masterKey);
-        if (rootKey == null) throw Exception('Root key not available');
-        
-        // Create a temporary file for viewing
-        final tempDir = await getTemporaryDirectory();
-        final tempFile = File('${tempDir.path}/${doc.name}');
+      print('Master key obtained, length: ${masterKey.length}');
+      
+      final rootKey = await km.unwrapRootWithMaster(masterKey);
+      if (rootKey == null) throw Exception('Root key not available');
 
-          // Decrypt the wrapped file key first (stored in DB as base64)
-          final wrappedCipher = existingDoc.wrappedKey;
-          final wrappedIv = existingDoc.iv;
+      print('Root key obtained, length: ${rootKey.length}');
 
-          // Unwrap to obtain the per-file symmetric key
-          late Uint8List fileKey;
-          try {
-            fileKey = EncryptionService.decryptBytes(wrappedCipher, wrappedIv, rootKey);
-          } catch (e) {
-            throw Exception('Failed to unwrap file key: $e');
-          }
+      // Decrypt the wrapped file key
+      final wrappedCipher = doc.wrappedKey;
+      final wrappedIv = doc.iv;
+      
+      print('Wrapped cipher length: ${wrappedCipher.length}');
+      print('Wrapped IV length: ${wrappedIv.length}');
+      
+      final fileKey = EncryptionService.decryptBytes(wrappedCipher, wrappedIv, rootKey);
+      print('File key decrypted, length: ${fileKey.length}');
 
-          // Baca dan validasi file terenkripsi
-          final bytes = await file.readAsBytes();
-          final unpacked = SecureFileFormat.unpackFile(bytes);
-          final encryptedData = unpacked['data'] as List<int>;
+      // Baca file terenkripsi
+      final bytes = await file.readAsBytes();
+      print('Encrypted file size: ${bytes.length} bytes');
+      
+      // PERBAIKAN: Gunakan unpackFile yang lebih robust
+      final unpacked = SecureFileFormat.unpackFile(bytes);
+      if (unpacked == null) {
+        throw Exception('Failed to unpack file - invalid format');
+      }
+      
+      final encryptedData = unpacked['data'] as List<int>;
+      final originalName = unpacked['header']['originalName'] as String;
+      
+      print('Encrypted data size: ${encryptedData.length} bytes');
+      print('Original filename: $originalName');
+      
+      // PERBAIKAN: Validasi panjang data sebelum decrypt
+      if (encryptedData.length < 32) { // Minimal cipher + IV
+        throw Exception('Encrypted data is too small or corrupted');
+      }
+      
+      // Pisahkan cipher dan IV - PERBAIKAN: IV selalu 16 bytes di akhir
+      final cipherData = encryptedData.sublist(0, encryptedData.length - 16);
+      final ivData = encryptedData.sublist(encryptedData.length - 16);
+      
+      print('Cipher size: ${cipherData.length}, IV size: ${ivData.length}');
+      
+      // Dekripsi data
+      final decrypted = EncryptionService.decryptBytes(
+        base64.encode(cipherData),
+        base64.encode(ivData),
+        fileKey,
+      );
+
+      print('File decrypted successfully, size: ${decrypted.length} bytes');
+
+      // Minta user memilih lokasi export
+      final savePath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Pilih lokasi ekspor file',
+        fileName: originalName,
+      );
+
+      if (savePath != null) {
+        await File(savePath).writeAsBytes(decrypted);
+        print('File exported to: $savePath');
+        return savePath;
+      }
+      
+      return null;
+
+    } catch (e) {
+      print('Export error details: $e');
+      rethrow;
+    }
+  }
+
+/// PERBAIKAN: Method openFile dengan multiple fallback strategies
+Future<void> openFile(Document doc) async {
+  try {
+    final file = File(doc.path);
+    if (!await file.exists()) {
+      throw Exception('File not found at path: ${doc.path}');
+    }
+
+    final docService = Provider.of<DocumentService>(context, listen: false);
+    final existingDoc = await docService.getDocument(doc.id);
+    
+    if (existingDoc == null) {
+      throw Exception('Document metadata not found');
+    }
+
+    // Dapatkan kunci
+    final km = KeyManager();
+    final masterKey = await km.getMasterKey();
+    if (masterKey == null) throw Exception('Master key not available');
+    
+    final rootKey = await km.unwrapRootWithMaster(masterKey);
+    if (rootKey == null) throw Exception('Root key not available');
+    
+    // Buat file temporary untuk viewing
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File('${tempDir.path}/${doc.name}');
+
+    try {
+      // Decrypt the wrapped file key
+      final wrappedCipher = existingDoc.wrappedKey;
+      final wrappedIv = existingDoc.iv;
+
+      print('Unwrapping file key for: ${doc.name}');
+      final fileKey = EncryptionService.decryptBytes(wrappedCipher, wrappedIv, rootKey);
+      print('File key unwrapped, length: ${fileKey.length}');
+
+      // Baca file terenkripsi
+      final bytes = await file.readAsBytes();
+      print('Encrypted file size: ${bytes.length} bytes');
+      
+      // Unpack file
+      final unpacked = SecureFileFormat.unpackFile(bytes);
+      if (unpacked == null) {
+        throw Exception('Failed to unpack file - invalid format');
+      }
+      
+      final encryptedData = unpacked['data'] as List<int>;
+      final originalName = unpacked['header']['originalName'] as String;
+      
+      print('Encrypted data size: ${encryptedData.length} bytes');
+      print('Original filename: $originalName');
+      
+      // PERBAIKAN: Multiple decryption strategies
+      Uint8List decrypted;
+      
+      try {
+        // Strategy 1: Standard approach (cipher + IV)
+        if (encryptedData.length >= 32) {
+          final cipherData = encryptedData.sublist(0, encryptedData.length - 16);
+          final ivData = encryptedData.sublist(encryptedData.length - 16);
           
-          // Ambil IV dari akhir data terenkripsi
-          if (encryptedData.length < 16) throw Exception('Encrypted data is too small or corrupted');
-          final cipher = encryptedData.sublist(0, encryptedData.length - 16);
-          final iv = encryptedData.sublist(encryptedData.length - 16);
+          print('Strategy 1 - Cipher size: ${cipherData.length}, IV size: ${ivData.length}');
           
-          // Dekripsi data
-          final decrypted = EncryptionService.decryptBytes(
-            base64.encode(cipher),
-            base64.encode(iv),
+          decrypted = EncryptionService.decryptBytes(
+            base64.encode(cipherData),
+            base64.encode(ivData),
             fileKey,
           );
-      
-      // Write to temp and open
+        } else {
+          throw Exception('Data too short for standard decryption');
+        }
+      } catch (e) {
+        print('Strategy 1 failed: $e');
+        
+        // Strategy 2: Try different IV position
+        print('Trying Strategy 2 - Alternative IV position');
+        try {
+          // Coba dengan IV di awal
+          if (encryptedData.length >= 32) {
+            final ivPart = encryptedData.sublist(0, 16);
+            final cipherPart = encryptedData.sublist(16);
+            
+            decrypted = EncryptionService.decryptBytes(
+              base64.encode(cipherPart),
+              base64.encode(ivPart),
+              fileKey,
+            );
+          } else {
+            throw Exception('Data too short for alternative decryption');
+          }
+        } catch (e2) {
+          print('Strategy 2 failed: $e2');
+          throw Exception('All decryption strategies failed: $e, $e2');
+        }
+      }
+
+      print('File decrypted successfully, size: ${decrypted.length} bytes');
+
+      // Tulis ke file temporary
       await tempFile.writeAsBytes(decrypted);
+      
+      // Buka file dengan aplikasi external
       final result = await OpenFilex.open(tempFile.path);
       
-      // Schedule cleanup
-      Future.delayed(const Duration(minutes: 5), () {
-        tempFile.delete().catchError((error) => file); // Return file to satisfy type requirement
+      // Schedule cleanup setelah 5 menit
+      Future.delayed(const Duration(minutes: 5), () async {
+        try {
+          if (await tempFile.exists()) {
+            await tempFile.delete();
+            print('Temporary file cleaned up: ${tempFile.path}');
+          }
+        } catch (e) {
+          print('Error cleaning up temp file: $e');
+        }
       });
 
       if (result.type != ResultType.done) {
-        throw Exception(result.message);
+        throw Exception('Failed to open file: ${result.message}');
       }
-      return;
-    }} catch (e) {
-      String message = 'Error opening file: $e';
-      if (e.toString().contains('path')) {
-        message = 'File not found or cannot be accessed';
-        // Offer user to restore/export decrypted copy if possible
-  // final docService = Provider.of<DocumentService>(context, listen: false);
-        // Show a dialog prompting user to restore the file back to Downloads as plaintext
-        showDialog<void>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text('File missing'),
-            content: Text('Encrypted file is missing from vault. You can try to export a decrypted copy if you have a backup of the encrypted blob. Do you want to attempt export?'),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel')),
-              ElevatedButton(onPressed: () async {
-                Navigator.pop(context);
-                // Attempt to export: if file not found in vault, nothing to do — just notify
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No encrypted blob available to export')));
-              }, child: Text('OK')),
-            ],
-          ),
-        );
-      } else if (e.toString().contains('key')) {
-        message = 'Cannot decrypt file - encryption key not available';
-      } else if (e.toString().contains('decrypt')) {
-        message = 'File decryption failed - file may be corrupted';
+      
+      // Log aktivitas sukses
+      await docService.logActivity(doc.id, 'opened');
+      
+    } catch (decryptError) {
+      // Clean up temp file jika ada error
+      if (await tempFile.exists()) {
+        await tempFile.delete();
       }
-      print(message);
       rethrow;
     }
+    
+  } catch (e) {
+    print('Open file error: $e');
+    
+    _showErrorDialog(
+      'Cannot Open File',
+      'The file could not be opened.\n\nError: $e\n\nPlease try exporting the file instead.'
+    );
+    
+    rethrow;
+  }
+}
+      
+  
+  /// Helper untuk menampilkan dialog error
+  void _showErrorDialog(String title, String message) {
+    if (!context.mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Export decrypted file back to a user-accessible location (Downloads)
   Future<String> exportDecryptedToDownloads(Document doc, Uint8List decryptedBytes) async {
     final downloads = await getDownloadsDirectory();
-    final file = File('${downloads!.path}/${doc.name}');
+    if (downloads == null) throw Exception('Downloads directory not available');
+    
+    final file = File('${downloads.path}/${doc.name}');
     await file.writeAsBytes(decryptedBytes);
     return file.path;
   }
 
-  /// Decrypt an encrypted vault file and return plaintext bytes
+  /// Decrypt an encrypted vault file and return plaintext bytes - PERBAIKAN
   Future<Uint8List> decryptFileToBytes(Document doc) async {
     final file = File(doc.path);
     if (!await file.exists()) throw Exception('File not found');
@@ -301,14 +371,29 @@ class FileManagerService {
     final fileKey = EncryptionService.decryptBytes(wrappedCipher, wrappedIv, rootKey);
 
     final bytes = await file.readAsBytes();
-    if (bytes.length < 16) throw Exception('Encrypted file is too small or corrupted');
-    final cipher = bytes.sublist(0, bytes.length - 16);
-    final iv = bytes.sublist(bytes.length - 16);
+    
+    // PERBAIKAN: Gunakan unpackFile
+    final unpacked = SecureFileFormat.unpackFile(bytes);
+    if (unpacked == null) {
+      throw Exception('Failed to unpack file - invalid format');
+    }
+    
+    final encryptedData = unpacked['data'] as List<int>;
+    
+    // Validasi panjang
+    if (encryptedData.length < 32) {
+      throw Exception('Encrypted data is too small or corrupted');
+    }
+    
+    final cipherData = encryptedData.sublist(0, encryptedData.length - 16);
+    final ivData = encryptedData.sublist(encryptedData.length - 16);
+    
     final decrypted = EncryptionService.decryptBytes(
-      base64.encode(cipher),
-      base64.encode(iv),
+      base64.encode(cipherData),
+      base64.encode(ivData),
       fileKey,
     );
+    
     return decrypted;
   }
 

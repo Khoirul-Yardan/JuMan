@@ -56,69 +56,83 @@ class EncryptionService {
     return Uint8List.fromList(List<int>.generate(len, (_) => rnd.nextInt(256)));
   }
 
-  // FIX: Hanya satu method encryptBytes
   static Map<String, String> encryptBytes(Uint8List plainBytes, Uint8List keyBytes) {
-    // Validasi dan fix key length - PERBAIKAN
+    // Validasi dan fix key length
     final validKey = _ensureAes256Key(keyBytes);
     
     final key = enc.Key(validKey);
     final iv = enc.IV.fromSecureRandom(16);
-    final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc, padding: null));
+    final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc, padding: 'PKCS7'));
     
-    // Add PKCS7 padding manually
-    final blockSize = 16;
-    final padLength = blockSize - (plainBytes.length % blockSize);
-    final padded = Uint8List(plainBytes.length + padLength);
-    padded.setAll(0, plainBytes);
-    padded.fillRange(plainBytes.length, padded.length, padLength);
-    
-    final encrypted = encrypter.encryptBytes(padded, iv: iv);
+    final encrypted = encrypter.encryptBytes(plainBytes, iv: iv);
     return {
       'cipher': encrypted.base64,
       'iv': iv.base64,
     };
   }
 
-  // FIX: Hanya satu method decryptBytes
+  // PERBAIKAN: Fix return type Uint8List
   static Uint8List decryptBytes(String base64Cipher, String base64Iv, Uint8List keyBytes) {
     try {
-      // Validasi dan fix key length - PERBAIKAN
+      // Validasi dan fix key length
       final validKey = _ensureAes256Key(keyBytes);
       
       final key = enc.Key(validKey);
       final iv = enc.IV.fromBase64(base64Iv);
-      final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc, padding: null));
-      final decrypted = encrypter.decryptBytes(enc.Encrypted.fromBase64(base64Cipher), iv: iv);
       
-      // Remove PKCS7 padding dengan error handling yang lebih baik
-      if (decrypted.isEmpty) {
-        throw Exception('Decrypted data is empty');
-      }
+      // Gunakan padding PKCS7
+      final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc, padding: 'PKCS7'));
       
-      final padLength = decrypted.last;
+      final encrypted = enc.Encrypted.fromBase64(base64Cipher);
+      final decrypted = encrypter.decryptBytes(encrypted, iv: iv);
       
-      // Validasi padding length
-      if (padLength < 1 || padLength > 16) {
-        print('Warning: Invalid padding length $padLength, returning raw data');
-        return Uint8List.fromList(decrypted);
-      }
+      // PERBAIKAN: Convert List<int> to Uint8List
+      return Uint8List.fromList(decrypted);
       
-      // Validasi semua byte padding
-      for (var i = decrypted.length - padLength; i < decrypted.length; i++) {
-        if (decrypted[i] != padLength) {
-          print('Warning: Invalid padding at position $i, expected $padLength got ${decrypted[i]}');
-          return Uint8List.fromList(decrypted);
-        }
-      }
-      
-      return Uint8List.fromList(decrypted.sublist(0, decrypted.length - padLength));
     } catch (e) {
       print('Decryption error: $e');
-      rethrow;
+      
+      // FALLBACK: Coba tanpa padding manual
+      try {
+        print('Trying fallback decryption...');
+        return _decryptBytesFallback(base64Cipher, base64Iv, keyBytes);
+      } catch (fallbackError) {
+        print('Fallback decryption also failed: $fallbackError');
+        rethrow;
+      }
     }
   }
 
-  // FIX: Method helper untuk memastikan key 32 bytes
+  // FALLBACK method untuk handle berbagai format - PERBAIKAN: Fix return type
+  static Uint8List _decryptBytesFallback(String base64Cipher, String base64Iv, Uint8List keyBytes) {
+    final validKey = _ensureAes256Key(keyBytes);
+    final key = enc.Key(validKey);
+    final iv = enc.IV.fromBase64(base64Iv);
+    
+    // Coba berbagai padding options
+    final paddingOptions = ['PKCS7', null];
+    
+    for (final padding in paddingOptions) {
+      try {
+        print('Trying padding: $padding');
+        final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc, padding: padding));
+        final encrypted = enc.Encrypted.fromBase64(base64Cipher);
+        final decrypted = encrypter.decryptBytes(encrypted, iv: iv);
+        
+        print('Success with padding: $padding, decrypted size: ${decrypted.length}');
+        
+        // PERBAIKAN: Convert List<int> to Uint8List
+        return Uint8List.fromList(decrypted);
+      } catch (e) {
+        print('Failed with padding $padding: $e');
+        continue;
+      }
+    }
+    
+    throw Exception('All decryption attempts failed');
+  }
+
+  // Method helper untuk memastikan key 32 bytes
   static Uint8List _ensureAes256Key(Uint8List key) {
     if (key.length == 32) {
       return key;
