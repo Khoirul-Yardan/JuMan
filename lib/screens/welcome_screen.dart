@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'login_screen.dart';
-import 'onboarding_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Color(0xFF0A0A0A),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32.0),
@@ -13,67 +13,113 @@ class WelcomeScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Welcome to LockVerse',
-                style: Theme.of(context).textTheme.headlineMedium,
-                textAlign: TextAlign.center,
+              // Logo/Icon Section
+              Container(
+                padding: EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF4ECDC4), Color(0xFF44A08D)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Icon(
+                  Icons.security,
+                  size: 64,
+                  color: Colors.black,
+                ),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 32),
+              
+              // Title Section
               Text(
-                'Your secure file storage solution',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Colors.grey,
+                'JuMan',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 42,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 48),
+              SizedBox(height: 8),
+              Text(
+                'Encrypted File Manager',
+                style: TextStyle(
+                  color: Color(0xFF4ECDC4),
+                  fontSize: 16,
+                  letterSpacing: 1,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              
+              SizedBox(height: 48),
+              
+              // Feature List
+              _buildFeatureItem('🔒 Military-grade encryption'),
+              _buildFeatureItem('📁 Local-only storage'),
+              _buildFeatureItem('🔄 Secure backup & restore'),
+              _buildFeatureItem('📱 One device, one key'),
+              
+              SizedBox(height: 48),
+              
+              // Get Started Button
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Theme.of(context).primaryColor,
+                  backgroundColor: Color(0xFF4ECDC4),
+                  foregroundColor: Colors.black,
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 4,
                 ),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => LoginScreen()),
-                ),
-                child: const Text(
-                  'Login',
-                  style: TextStyle(fontSize: 16),
-                ),
-              ),
-              const SizedBox(height: 16),
-              OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                onPressed: () => Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => OnboardingScreen()),
-                ),
-                child: const Text(
-                  'Create New Account',
-                  style: TextStyle(fontSize: 16),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
                 onPressed: () {
-                  showDialog<void>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: Text('How LockVerse works'),
-                      content: SingleChildScrollView(
-                        child: Text('LockVerse encrypts each file with a random per-file key. That key is encrypted with your root key, which is itself protected by your master password. Files are stored encrypted in the app vault. When opening, the app unwraps the file key and decrypts to a temporary file which is opened by your OS default app.'),
-                      ),
-                      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text('Close'))],
-                    ),
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (_) => LoginScreen()),
                   );
                 },
-                child: Text('How it works'),
+                child: Text(
+                  'Get Started',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              
+              SizedBox(height: 20),
+              
+              // Security Note
+              Text(
+                'All data stored locally • No cloud synchronization',
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildFeatureItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle, color: Color(0xFF4ECDC4), size: 20),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+          ),
+        ],
       ),
     );
   }

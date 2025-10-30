@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -11,6 +10,7 @@ import '../models/document.dart';
 import '../services/document_service.dart';
 import '../services/encryption_service.dart';
 import '../services/key_manager.dart';
+import '../services/secure_file_format.dart';
 
 class FileManagerService {
   final BuildContext context;
@@ -19,9 +19,16 @@ class FileManagerService {
 
   Future<String> get _localPath async {
     final directory = await getApplicationDocumentsDirectory();
-    final path = '${directory.path}/lockverse';
+    final path = '${directory.path}/juman';
     await Directory(path).create(recursive: true);
     return path;
+  }
+
+  Future<String> getVaultPath() async {
+    final path = await _localPath;
+    final vaultDir = Directory('$path/vault');
+    await vaultDir.create(recursive: true);
+    return vaultDir.path;
   }
 
   Future<List<PlatformFile>?> pickFiles() async {
@@ -32,24 +39,44 @@ class FileManagerService {
     return result?.files;
   }
 
-  Future<String> saveEncryptedBlob(String filename, List<int> bytes) async {
+  Future<String> saveEncryptedBlob(String filename, List<int> encryptedBytes) async {
     // Create secure storage directory
     final path = await _localPath;
     final vaultDir = Directory('$path/vault');
     await vaultDir.create(recursive: true);
 
-    // Save encrypted file with timestamp and hidden attribute
+    // Pack encrypted data with secure format
+    final secureBytes = SecureFileFormat.packFile(encryptedBytes, filename);
+
+    // Generate random filename for storage
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final filePath = '${vaultDir.path}/$timestamp-$filename.enc';
+    final randomId = base64Url.encode(List.generate(8, (_) => DateTime.now().microsecondsSinceEpoch % 256));
+    final filePath = '${vaultDir.path}/$timestamp-$randomId.lckv';
     final file = File(filePath);
     
-    await file.writeAsBytes(bytes);
+    await file.writeAsBytes(secureBytes);
     
-    // On Windows, set hidden attribute
+    // On Windows, set hidden and system attributes - PERBAIKAN
     if (Platform.isWindows) {
-      final result = await Process.run('attrib', ['+H', file.path]);
-      if (result.exitCode != 0) {
-        print('Warning: Could not hide file: ${result.stderr}');
+      try {
+        // Coba metode attrib pertama
+        final processResult = await Process.run('attrib', ['+H', '+S', file.path]);
+        if (processResult.exitCode != 0) {
+          print('Warning: Could not set file attributes with attrib: ${processResult.stderr}');
+          
+          // Fallback: coba dengan PowerShell
+          final psResult = await Process.run('powershell', [
+            '-Command',
+            'Set-ItemProperty -Path "${file.path}" -Name Attributes -Value "ReadOnly, Hidden, System"'
+          ]);
+          
+          if (psResult.exitCode != 0) {
+            print('Warning: Could not set file attributes with PowerShell: ${psResult.stderr}');
+          }
+        }
+      } catch (e) {
+        print('Warning: Failed to set file attributes: $e');
+        // Continue without attributes - better than failing completely
       }
     }
     
@@ -84,6 +111,77 @@ class FileManagerService {
     return newPath;
   }
 
+  /// Export file tanpa enkripsi ke lokasi yang dipilih user - PERBAIKAN
+ Future<String?> exportDecrypted(Document doc) async {
+  try {
+    final file = File(doc.path);
+    if (!await file.exists()) throw Exception('File not found');
+
+   final km = KeyManager(); // Use fixed key manager
+    final masterKey = await km.getMasterKey();
+    if (masterKey == null) throw Exception('Master key not available');
+    
+    print('Master key obtained, length: ${masterKey.length}');
+    
+    final rootKey = await km.unwrapRootWithMaster(masterKey);
+    if (rootKey == null) throw Exception('Root key not available');
+
+    print('Root key obtained, length: ${rootKey.length}');
+
+    // Decrypt the wrapped file key
+    final wrappedCipher = doc.wrappedKey;
+    final wrappedIv = doc.iv;
+    
+    print('Wrapped cipher length: ${wrappedCipher.length}');
+    print('Wrapped IV length: ${wrappedIv.length}');
+    
+    final fileKey = EncryptionService.decryptBytes(wrappedCipher, wrappedIv, rootKey);
+    print('File key decrypted, length: ${fileKey.length}');
+
+    // Read and validate encrypted file
+    final bytes = await file.readAsBytes();
+    print('Encrypted file size: ${bytes.length} bytes');
+    
+    final unpacked = SecureFileFormat.unpackFile(bytes);
+    final encryptedData = unpacked['data'] as List<int>;
+    final originalName = unpacked['header']['originalName'] as String;
+    
+    print('Encrypted data size: ${encryptedData.length} bytes');
+    
+    // Decrypt data
+    if (encryptedData.length < 16) throw Exception('Encrypted data is too small or corrupted');
+    final cipher = encryptedData.sublist(0, encryptedData.length - 16);
+    final iv = encryptedData.sublist(encryptedData.length - 16);
+    
+    print('Cipher size: ${cipher.length}, IV size: ${iv.length}');
+    
+    final decrypted = EncryptionService.decryptBytes(
+      base64.encode(cipher),
+      base64.encode(iv),
+      fileKey,
+    );
+
+    print('File decrypted successfully, size: ${decrypted.length} bytes');
+
+    // Ask user for export location
+    final savePath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Pilih lokasi ekspor file',
+      fileName: originalName,
+    );
+
+    if (savePath != null) {
+      await File(savePath).writeAsBytes(decrypted);
+      print('File exported to: $savePath');
+      return savePath;
+    }
+    
+    return null;
+
+  } catch (e) {
+    print('Export error details: $e');
+    rethrow;
+  }
+}
   Future<void> openFile(Document doc) async {
     try {
       final file = File(doc.path);
@@ -117,11 +215,17 @@ class FileManagerService {
             throw Exception('Failed to unwrap file key: $e');
           }
 
-          // Decrypt the file contents using the unwrapped file key
+          // Baca dan validasi file terenkripsi
           final bytes = await file.readAsBytes();
-          if (bytes.length < 16) throw Exception('Encrypted file is too small or corrupted');
-          final cipher = bytes.sublist(0, bytes.length - 16);
-          final iv = bytes.sublist(bytes.length - 16);
+          final unpacked = SecureFileFormat.unpackFile(bytes);
+          final encryptedData = unpacked['data'] as List<int>;
+          
+          // Ambil IV dari akhir data terenkripsi
+          if (encryptedData.length < 16) throw Exception('Encrypted data is too small or corrupted');
+          final cipher = encryptedData.sublist(0, encryptedData.length - 16);
+          final iv = encryptedData.sublist(encryptedData.length - 16);
+          
+          // Dekripsi data
           final decrypted = EncryptionService.decryptBytes(
             base64.encode(cipher),
             base64.encode(iv),

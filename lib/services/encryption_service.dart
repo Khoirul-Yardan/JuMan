@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:math';
@@ -57,23 +56,84 @@ class EncryptionService {
     return Uint8List.fromList(List<int>.generate(len, (_) => rnd.nextInt(256)));
   }
 
+  // FIX: Hanya satu method encryptBytes
   static Map<String, String> encryptBytes(Uint8List plainBytes, Uint8List keyBytes) {
-    final key = enc.Key(keyBytes);
+    // Validasi dan fix key length - PERBAIKAN
+    final validKey = _ensureAes256Key(keyBytes);
+    
+    final key = enc.Key(validKey);
     final iv = enc.IV.fromSecureRandom(16);
-    final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc));
-    final encrypted = encrypter.encryptBytes(plainBytes, iv: iv);
+    final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc, padding: null));
+    
+    // Add PKCS7 padding manually
+    final blockSize = 16;
+    final padLength = blockSize - (plainBytes.length % blockSize);
+    final padded = Uint8List(plainBytes.length + padLength);
+    padded.setAll(0, plainBytes);
+    padded.fillRange(plainBytes.length, padded.length, padLength);
+    
+    final encrypted = encrypter.encryptBytes(padded, iv: iv);
     return {
       'cipher': encrypted.base64,
       'iv': iv.base64,
     };
   }
 
+  // FIX: Hanya satu method decryptBytes
   static Uint8List decryptBytes(String base64Cipher, String base64Iv, Uint8List keyBytes) {
-    final key = enc.Key(keyBytes);
-    final iv = enc.IV.fromBase64(base64Iv);
-    final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc));
-    final decrypted = encrypter.decryptBytes(enc.Encrypted.fromBase64(base64Cipher), iv: iv);
-    return Uint8List.fromList(decrypted);
+    try {
+      // Validasi dan fix key length - PERBAIKAN
+      final validKey = _ensureAes256Key(keyBytes);
+      
+      final key = enc.Key(validKey);
+      final iv = enc.IV.fromBase64(base64Iv);
+      final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.cbc, padding: null));
+      final decrypted = encrypter.decryptBytes(enc.Encrypted.fromBase64(base64Cipher), iv: iv);
+      
+      // Remove PKCS7 padding dengan error handling yang lebih baik
+      if (decrypted.isEmpty) {
+        throw Exception('Decrypted data is empty');
+      }
+      
+      final padLength = decrypted.last;
+      
+      // Validasi padding length
+      if (padLength < 1 || padLength > 16) {
+        print('Warning: Invalid padding length $padLength, returning raw data');
+        return Uint8List.fromList(decrypted);
+      }
+      
+      // Validasi semua byte padding
+      for (var i = decrypted.length - padLength; i < decrypted.length; i++) {
+        if (decrypted[i] != padLength) {
+          print('Warning: Invalid padding at position $i, expected $padLength got ${decrypted[i]}');
+          return Uint8List.fromList(decrypted);
+        }
+      }
+      
+      return Uint8List.fromList(decrypted.sublist(0, decrypted.length - padLength));
+    } catch (e) {
+      print('Decryption error: $e');
+      rethrow;
+    }
+  }
+
+  // FIX: Method helper untuk memastikan key 32 bytes
+  static Uint8List _ensureAes256Key(Uint8List key) {
+    if (key.length == 32) {
+      return key;
+    }
+    
+    print('Fixing AES-256 key length from ${key.length} to 32 bytes');
+    
+    if (key.length > 32) {
+      // Ambil 32 bytes pertama
+      return key.sublist(0, 32);
+    } else {
+      // Gunakan hash untuk mendapatkan 32 bytes yang konsisten
+      final hash = sha256.convert(key);
+      return Uint8List.fromList(hash.bytes);
+    }
   }
 
   static String hmacBase64(String data, String key) {

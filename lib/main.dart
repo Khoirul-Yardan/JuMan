@@ -6,7 +6,6 @@ import 'utils/theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
-import 'screens/onboarding_screen.dart';
 import 'services/auth_service.dart';
 import 'services/document_service.dart';
 
@@ -47,7 +46,6 @@ class LockVerseApp extends StatelessWidget {
         '/': (context) => SplashScreen(),
         '/login': (context) => LoginScreen(),
         '/home': (context) => HomeScreen(),
-        '/onboarding': (context) => OnboardingScreen(),
       },
       debugShowCheckedModeBanner: false,
     );
